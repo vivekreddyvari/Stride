@@ -16,6 +16,7 @@ dstpath = r"/Users/vivekreddyvari/opt/anaconda/Flask/Assignment/ext"
 def ListDirectory(dir, gz_name):
     ''' List the folders and files '''
     fileNames = os.listdir(dir)
+    fileNames = [i for i in fileNames if os.path.isfile(i)]
     for fileName in fileNames:
         gz_type = '.gz'
         if any(gz_type in x for x in fileNames):
