@@ -6,6 +6,19 @@ import tempfile
 import os
 import re
 from bs4 import BeautifulSoup
+import pymongo
+
+# connect to db
+try:
+    mongo = pymongo.MongoClient(
+        host="localhost",
+        port=27017,
+        serverSelectionTimeoutMS=1000
+        )
+    db = mongo.crawl
+    mongo.server_info()  # trigger exception if db connection failed
+except:
+    print("ERROR - cannot connect to db")
 
 
 class GZ_JSON_Array(collections.abc.Sequence):
@@ -69,14 +82,10 @@ def ListDirectory(dir, gz_name):
 
 
 def checkJson(array):
-    """ create dictionary obj
-    Product Details:
-      - body
-      - crawled_at
-      - page_type
-      - page_url
+    """ create Crawl DB with following collections
+    1) Product Overview:
+    2) Product Details:
 
-    Product Overview:
     """
     # Initialize empty lists
     body = []
@@ -87,48 +96,70 @@ def checkJson(array):
     for index in random.sample(range(len(json_array)), 100):
         obj = json_array[index]
 
-        # HTML Parsing
-        html_parsing = obj['body']
-        url = obj['page_url']
+        # determine competitor?
+        competitor = determine_competitor(obj['page_url'])
 
-        # Parse the page to fetch relavant information
-        htmlScrapper(html_parsing, url)  # HTML Scrapping
-        print("The page type is ", obj['page_type'])
-        print("\n\n\n")
+        if obj['page_type'] == 'product_detail':
+            schema_of_detail = {}
+
+            # HTML Parsing
+            html_parsing = obj['body']
+            url = obj['page_url']
+
+            # Parse the page to fetch relevant information and HTML Scrapping
+            zalando_info = {}
+            omoda_info = {}
+            scrapped_data = html_scrapper(html_parsing,
+                          url,
+                          zalando_info,
+                          omoda_info)
+
+            if 'zalando' in competitor and scrapped_data != {} :
+                schema_of_detail['page_type'] = obj['page_type']
+                schema_of_detail['page_url'] = obj['page_url']
+                schema_of_detail['crawled_at'] = obj['crawled_at']
+                schema_of_detail['body'] = obj['body']
+                schema_of_detail['competitor'] = competitor
+                schema_of_detail['zalando_info'] = scrapped_data
+                # db.productdetail.insert_one(schema_of_detail)
+
+            if 'omoda' in competitor and scrapped_data != {}:
+                schema_of_detail['page_type'] = obj['page_type']
+                schema_of_detail['page_url'] = obj['page_url']
+                schema_of_detail['crawled_at'] = obj['crawled_at']
+                schema_of_detail['body'] = obj['body']
+                schema_of_detail['competitor'] = competitor
+                schema_of_detail['omoda_info'] = scrapped_data
+                # db.productdetail.insert_one(schema_of_detail)
 
         if obj['page_type'] == 'product_listing':
-            print(obj['page_url'])
-            print(obj['page_number'])
-            print(obj['crawled_at'])
-            print(obj['product_category'])
-            print(obj['ordering'])
-            web_site_text = obj['body']
-
-            soup = BeautifulSoup(web_site_text, features="html.parser")
-            print(soup.prettify())
-            print("\n\n\n")
-        # print(obj['crawled_at'])
-        # print(obj['page_url'])
-        # print('object[{}]: {!r}'.format(index, obj))
+            schema_of_overview = {}
+            if 'ziengs' not in competitor:
+                schema_of_overview['page_type'] = obj['page_type']
+                schema_of_overview['page_url'] = obj['page_url']
+                schema_of_overview['page_number'] = obj['page_number']
+                schema_of_overview['crawled_at'] = obj['crawled_at']
+                schema_of_overview['product_category'] = obj['product_category']
+                schema_of_overview['ordering'] = obj['ordering']
+                schema_of_overview['competitor'] = competitor
+                schema_of_overview['body'] = obj['body']
+                # db.productoverview.insert_one(schema_of_overview)
 
 
-def htmlScrapper(html, url):
+def html_scrapper(
+        html,
+        url,
+        zalando_info,
+        omoda_info):
+
     """ This function scraps the html and extracts product details
-    from the competitors """
+    from the competitors
+    :param html, url
+    :return zalando information, omoda information
+    """
+
     # Scrap the data
     soup = BeautifulSoup(html, features="html.parser")
-
-    # Initialize the variable
-    product_type = []
-    ptype_cat = []
-    product_name = []
-    pname = []
-    price = []
-    cost_ext = []
-    cost_dis = []
-    brand_name = []
-    brand = []
-    html_omoda = ''
 
     # Find the competitors
     is_zalando = 'zalando'
@@ -139,18 +170,21 @@ def htmlScrapper(html, url):
     ziengs_match = re.findall(is_ziengs, url)
 
     # Competitor Zalando
+    zalando_info = {}
     if is_zalando in zalando_match:
         for elements in soup.findAll('div', attrs={'id':'wrapper'}):
             try:
                 product_type = (elements.find('ul', attrs={'class': 'breadcrumbs'})).text
-                product_name = (elements.find('span', attrs={'itemprop': 'name'})).text
-                brand_name = (elements.find('span', attrs={'itemprop': 'brand'})).text
+                zalando_info['product_name'] = (elements.find('span', attrs={'itemprop': 'name'})).text
+                zalando_info['brand_name'] = (elements.find('span', attrs={'itemprop': 'brand'})).text
                 price = (elements.find('span', attrs={'class': 'price nowrap'})).text
             except AttributeError:
                 product_type = 'None'
-                product_name = 'None'
-                brand_name = 'None'
+                zalando_info['product_type'] = product_type
+                zalando_info['product_name'] = 'None'
+                zalando_info['brand_name'] = 'None'
                 price = 'None'
+                zalando_info['price'] = price
 
             # format product type to extract specific name
             if product_type != 'None':
@@ -158,22 +192,18 @@ def htmlScrapper(html, url):
                 values = [val.strip("\xa0/") for val in conv_string if val != '' and val != ' ']
                 len_of_values = len(values)
                 if len_of_values != 0 and len_of_values <= 3:
-                    product_type = values[2] + ' ' + values[3] + ' ' + values[4]
+                    zalando_info['product_type'] = values[2] + ' ' + values[3] + ' ' + values[4]
                 else:
-                    product_type = values[2] + ' ' + values[3]
+                    zalando_info['product_type'] = values[2] + ' ' + values[3]
 
             # format price with many blank lines
             if price != 'None':
-                price = re.sub(r'\n', '', price)
+                zalando_info['price'] = re.sub(r'\n', '', price)
 
-        print("The Product Category is:", product_type)
-        print("The Product Name is:", product_name)
-        print("The Product Brand is:", brand_name)
-        print("The product price is:", price)
-        # print("The cost of the product is:", cost_ext)
-        # print("The disc of the product is:", cost_dis)
+        return zalando_info
 
     # Competitor Omoda
+    omoda_info = {}
     if is_omoda in omoda_match:
         for elements in soup.findAll('div', attrs={'id': 'site'}):
 
@@ -182,46 +212,44 @@ def htmlScrapper(html, url):
                 product_type = (elements.find('table', attrs={'class': 'detail-kenmerken'})).text
                 product_name = (elements.find('h1', attrs={'itemprop': 'name'})).text
                 price = (elements.find('div', attrs={'class': 'prijs clearfix'})).text
+                competitor_check = is_omoda
             except AttributeError:
                 product_type = 'None'
                 product_name = 'None'
                 price = 'None'
 
+            ptype_cat = ' '
             if product_type != 'None':
-                ptype_cat = ExtractOmodaPtype(product_type, ptype_cat)
+                ptype_cat = extract_omoda_ptype(product_type, ptype_cat)
+                omoda_info['ptype_cat'] = ptype_cat
 
             # Product Name and Brand
             if product_name != 'None':
-                pname_brand = ExtractOmodaPname(product_name, pname, brand)
-                pname = pname_brand[0]  # product Name
-                brand_name = pname_brand[1]  # products Brand
+                brand = ''
+                pname = ''
+                pname_brand = extract_omoda_pname(product_name, pname, brand)
+                omoda_info['pname'] = pname_brand[0]  # product Name
+                omoda_info['brand_name'] = pname_brand[1]  # products Brand
 
             # Product Price - actual price and discount price
             if price != 'None':
-                cost_extracted = ExtractOmodaPrice(price, cost_dis, cost_ext)
+                cost_dis = ''
+                cost_ext = ''
+                cost_extracted = extract_omoda_price(price, cost_dis, cost_ext)
                 # if cost has discount price, then object becomes tuple,
                 is_tuple = type(cost_extracted)
 
                 if is_tuple == type(cost_extracted):
-                    cost_ext = cost_extracted[0]
+                    omoda_info['cost_ext'] = cost_extracted[0].replace('\xa0', ' ')
                     if len(cost_extracted) == 2:
-                        cost_dis = cost_extracted[1]
+                        omoda_info['cost_dis'] = cost_extracted[1]
                     else:
-                        cost_dis = '0'
+                        omoda_info['cost_dis'] = '0'
                 else:
-                    cost_ext = cost_extracted
+                    omoda_info['cost_ext'] = cost_extracted
+        return omoda_info
 
-        # print(soup.prettify())
-        # print(url)
-
-        print("The Product Category is:", ptype_cat)
-        print("The Product Name is:", pname)
-        print("The Product Brand is:", brand_name)
-        # print(price)
-        print("The cost of the product is:", cost_ext)
-        print("The disc of the product is:", cost_dis)
-
-    # Competitor Ziengs
+    # Competitor Ziengs (kept aside)
     """ 
     if is_ziengs in ziengs_match:
         for elements in soup.findAll('div', attrs={'id':'wrapper'}):
@@ -236,14 +264,10 @@ def htmlScrapper(html, url):
             brand_name = 'None'
             price = 'None'
     """
-    # print(product_type)
-    # print(product_name)
-    # print(brand_name)
-    # print(price)
 
-    pass
 
-def ExtractOmodaPtype(type, category_product):
+
+def extract_omoda_ptype(type, category_product):
     """
     :param type
     :return: Product Category
@@ -253,7 +277,7 @@ def ExtractOmodaPtype(type, category_product):
     return category_product[7]
 
 
-def ExtractOmodaPname(name, product_name, brand):
+def extract_omoda_pname(name, product_name, brand):
     """
     :param name, product_name, brand
     :return: product_name, brand
@@ -265,7 +289,7 @@ def ExtractOmodaPname(name, product_name, brand):
     return product_name, brand
 
 
-def ExtractOmodaPrice(cost_text, cost, disc):
+def extract_omoda_price(cost_text, cost, disc):
     """
     :param cost_text, cost, disc
     :return: Actual Cost, Disc
@@ -276,15 +300,39 @@ def ExtractOmodaPrice(cost_text, cost, disc):
     # Check the product has discounted price with Sale indication.
     check_values = extracted_value[0]
     if check_values == 'Sale':
-        actual_price = extracted_value[1]
-        discount_price = extracted_value[2]
+        actual_price = extracted_value[1].replace('\xa0', ' ')
+        discount_price = extracted_value[2].replace('\xa0', ' ')
         return actual_price, discount_price
     elif check_values == 'Vanaf':
-         check_values = extracted_value[0]
+         check_values = extracted_value[0].replace('\xa0', ' ')
          return check_values
     else:
         check_values = extracted_value
         return check_values
+
+
+def determine_competitor(url):
+    """ This functions returns competitor name
+    :param url
+    :return competitor_name
+    """
+    is_zalando = 'zalando'
+    is_omoda = 'omoda'
+    is_ziengs = 'ziengs'
+    zalando_match = re.findall(is_zalando, url)
+    omoda_match = re.findall(is_omoda, url)
+    ziengs_match = re.findall(is_ziengs, url)
+
+    if is_zalando in zalando_match:
+        competitor_name = is_zalando
+    elif is_omoda in omoda_match:
+        competitor_name = is_omoda
+    elif is_ziengs in ziengs_match:
+        competitor_name = is_ziengs
+    else:
+        competitor_name = "competitor NOT FOUND"
+
+    return competitor_name
 
 
 if __name__ == '__main__':
@@ -300,7 +348,6 @@ if __name__ == '__main__':
 
     # Check the JSON file and extract data
     checkJson(json_array)
-
 
     # Randomly access some objects in the JSON array.
 
