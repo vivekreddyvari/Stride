@@ -93,7 +93,7 @@ def checkJson(array):
     page_type = []
     page_url = []
 
-    for index in random.sample(range(len(json_array)), 100):
+    for index in random.sample(range(len(json_array)), 1000):
         obj = json_array[index]
 
         # determine competitor?
