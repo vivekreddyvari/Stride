@@ -48,15 +48,13 @@ def get_zalando():
             mimetype= "application/json"
         )
 
-
 @app.route("/competitor_omoda", methods=["GET"])
 def get_omoda():
     """ This function fetches competitor's brand """
     competitor_details = {
         "_id": 0,
         "competitor": "omoda",
-        "omoda_info.brand_name": 1,
-        "page_url": 1
+        "omoda_info.brand_name": 1
     }
     try:
         data = list(db.productdetail.find({}, competitor_details))
