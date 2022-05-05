@@ -111,7 +111,7 @@ def get_brands(brand):
     brands = {
         "_id": 0,
         "zalando_info.brand_name": brand,
-        "zalando_info.product_type": 1,
+        "zalando_info.product_name": 1,
         "competitor": 1
     }
 
@@ -119,7 +119,7 @@ def get_brands(brand):
         data = list(db.productdetail.find({}, brands))
         for brand_res in data:
             if "zalando" in brand_res["competitor"]:
-                brand_res["zalando_info"]["product_type"] = str(brand_res["zalando_info"]["product_type"])
+                brand_res["zalando_info"]["product_name"] = str(brand_res["zalando_info"]["product_name"])
         return Response(
             response=json.dumps(data),
             status=500,
@@ -134,6 +134,79 @@ def get_brands(brand):
             status=500,
             mimetype= "application/json"
         )
+
+
+# Fetch product details
+@app.route("/brand_productdetails/<prod>", methods = ["GET"])
+def get_productdetails(prod):
+    """ This function retrieves product details """
+    prod = str(prod)
+    productdetails = {
+        "_id": 0,
+        "zalando_info.product_name": '/' + prod + '/',
+        "zalando_info.product_type": 1,
+        "zalando_info.brand_name": 1,
+        "zalando_info.price": 1,
+        "product_url": 1,
+        "competitor": 1
+    }
+
+    try:
+        data = list(db.productdetail.find({}, productdetails))
+        for proddet in data:
+            if "zalando" in proddet["competitor"]:
+                proddet["zalando_info"]["product_name"] = str(proddet["zalando_info"]["product_name"])
+        return Response(
+            response=json.dumps(data),
+            status=500,
+            mimetype="application/json"
+        )
+    except Exception as ex:
+        print("------------------ERROR--------------------")
+        print(ex)
+        print("-------------------END---------------------")
+        return Response(
+            response=json.dumps({"message": "brand cannot be fetched."}),
+            status=500,
+            mimetype= "application/json"
+        )
+
+"""
+@app.route("/brand_productdetailsomoda/<prod>", methods = ["GET"])
+def get_productdetailsomoda(prod):
+
+    prod = str(prod)
+    productdetails = {
+        "_id": 0,
+        "omoda_info.pname_cat": '/' + '^' + prod + '/',
+        "omoda_info.pname": 1,
+        "omoda_info.brand_name": 1,
+        "omoda_info.cost_ext": 1,
+        "omoda_info.cost_dis": 1,
+        "product_url": 1,
+        "competitor": "omoda"
+    }
+
+    try:
+        data = list(db.productdetail.find({}, productdetails))
+        for proddet in data:
+            if "omoda" in proddet["competitor"]:
+                proddet["omoda_info"]["pname_cat"] = str(proddet["omoda_info"]["pname_cat"])
+        return Response(
+            response=json.dumps(data),
+            status=500,
+            mimetype="application/json"
+        )
+    except Exception as ex:
+        print("------------------ERROR--------------------")
+        print(ex)
+        print("-------------------END---------------------")
+        return Response(
+            response=json.dumps({"message": "brand cannot be fetched."}),
+            status=500,
+            mimetype= "application/json"
+        )
+"""
 
 
 if __name__ == "__main__":
